@@ -1,3 +1,4 @@
+```mermaid
 sequenceDiagram
     autonumber
     participant Scheme as Visa Network
