@@ -36,12 +36,12 @@ sequenceDiagram
         loop For Each Transaction in Batch
             RepayEngine->>CoreOrch: POST /core/settle-authorization<br/>{auth_id, amount, fees}
             activate CoreOrch
-            
             CoreOrch->>Ledger: Convert PENDING → FINAL Settlement
             activate Ledger
-            Note over Ledger: Multi-Entry Transaction:<br/>1. Finalize Customer DR (FINAL)<br/>2. Clear Processor Liability<br/>3. Record Interchange Fee (DR)<br/>4. Record Scheme Fee (DR)<br/>5. Net Payable to Visa (CR)
-            
-            Note over Ledger: Example for $50 Transaction:<br/>DR Customer Checking -$50.00 (FINAL)<br/>DR Processor Liability -$50.00<br/>DR Interchange Expense -$1.25<br/>DR Scheme Fees -$0.10<br/>CR Visa Payable +$51.35
+            Note over Ledger: Multi-Entry Transaction:<br/>1. DR Customer Cardholder (Receivable)<br/>2. DR Scheme/network Fees <br/>3. CR Settlement Payable (to Scheme) <br/> CR Interchange Income (Revenue)    
+            Note over Ledger: Example for $50 Transaction:<br/>DR Customer Recievable A/C -$50.00 (FINAL)<br/> DR Expense A/C(Scheme Fees) -$0.10  <br/> CR Settlement Payable (to Scheme) +48.45<br/><br/> CR Interchange Income (Revenue) $ 1.65
+
+                
             
             Ledger-->>CoreOrch: {settlement_id, status: POSTED}
             deactivate Ledger
