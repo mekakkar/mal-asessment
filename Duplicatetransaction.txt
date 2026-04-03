@@ -1,0 +1,83 @@
+sequenceDiagram
+    autonumber
+    participant Processor
+    participant JIT as JIT Auth Gateway
+    participant CardOrch as Cards Orchestrator
+    participant Ledger as Headless Ledger
+    participant Customer
+    
+    Note over Processor,Customer: Failure Scenario: Duplicate Authorization Request
+    
+    rect rgb(240, 255, 240)
+        Note over Processor,Ledger: First Authorization (Normal Flow)
+        
+        Processor->>JIT: POST /webhooks/card/authorize<br/>ID: jit_abc123
+        activate JIT
+        JIT->>CardOrch: Process Authorization
+        activate CardOrch
+        
+        CardOrch->>Ledger: Post Transaction<br/>Idempotency Key: "auth_jit_abc123"
+        activate Ledger
+        
+        Note over Ledger: Check: Does key exist?<br/>Result: NO (first time)
+        
+        Ledger->>Ledger: Create Transaction:<br/>- ID: txn_ledger_999<br/>- Idempotency Key: auth_jit_abc123<br/>- Amount: $50<br/>- Status: POSTED
+        
+        Ledger-->>CardOrch: Success {txn_id: txn_ledger_999,<br/>balance: $450}
+        deactivate Ledger
+        
+        CardOrch-->>JIT: {decision: APPROVE,<br/>auth_code: AUTH_123456}
+        deactivate CardOrch
+        
+        JIT-->>Processor: HTTP 200 OK<br/>{approved: true}
+        deactivate JIT
+        
+        Note over Processor: ⏱️ Response takes 4.8 seconds<br/>(slow network)
+        
+        Processor->>Processor: Timeout! No response received
+    end
+    
+    rect rgb(255, 245, 245)
+        Note over Processor,Ledger: Processor Retries (Duplicate Request)
+        
+        Note over Processor: Retry Logic:<br/>Assume failure, retry same request
+        
+        Processor->>JIT: POST /webhooks/card/authorize<br/>ID: jit_abc123 (SAME ID)
+        activate JIT
+        Note right of JIT: Time: 5.0 seconds after first request
+        
+        JIT->>CardOrch: Process Authorization (RETRY)
+        activate CardOrch
+        
+        CardOrch->>Ledger: Post Transaction<br/>Idempotency Key: "auth_jit_abc123"
+        activate Ledger
+        
+        Note over Ledger: Check: Does key exist?<br/>Result: YES ✓ (duplicate detected!)
+        
+        Ledger->>Ledger: Lookup Existing Transaction<br/>Key: auth_jit_abc123
+        
+        Note over Ledger: Found:<br/>- ID: txn_ledger_999<br/>- Status: POSTED<br/>- Balance: $450<br/>- Cached Response: {...}
+        
+        Ledger-->>CardOrch: {status: DUPLICATE,<br/>original_txn_id: txn_ledger_999,<br/>cached_response: {approved: true}}
+        deactivate Ledger
+        
+        Note over CardOrch: Idempotency Hit!<br/>Return original response
+        
+        CardOrch-->>JIT: {decision: APPROVE,<br/>auth_code: AUTH_123456}<br/>(same response as first time)
+        deactivate CardOrch
+        
+        JIT-->>Processor: HTTP 200 OK<br/>{approved: true}
+        deactivate JIT
+        
+        Note over Processor: ✓ Response received this time
+    end
+    
+    rect rgb(240, 255, 240)
+        Note over Ledger,Customer: Result: No Duplicate Charge
+        
+        Note over Ledger: Final State:<br/>- Only 1 transaction in ledger<br/>- Customer balance: $450<br/>- NOT double-charged ✓
+        
+        Note over Customer: Customer Statement:<br/>Apr 3 - Starbucks $50.00<br/>(appears once only)
+        
+        Note over Ledger: Metrics:<br/>- Total Authorizations: 1<br/>- Duplicate Requests: 1<br/>- Duplicate Rate: 0.1%<br/>(within normal threshold)
+    end
