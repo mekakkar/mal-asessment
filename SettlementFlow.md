@@ -4,7 +4,7 @@ sequenceDiagram
     participant Scheme as Visa Network
     participant Processor as Issuer Processor
     participant SchemeGW as Scheme Gateway
-    participant RepayEngine as Repayment Engine
+    participant RepayEngine as Settlement Engine
     participant CoreOrch as Core Orchestrator
     participant Ledger as Headless Ledger
     participant EventBus as Event Backbone
