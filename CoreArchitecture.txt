@@ -1,0 +1,123 @@
+workspace "Mal.ai Core v2" "AI-First Headless Architecture with Linkage & Balance Layers" {
+
+    model {
+        customer = person "Customer" "User interacting via Mobile/Web."
+        externalPaymentNetworks = softwareSystem "Aani / UAEFTS / Buna / SWIFT / Web3" "External Schemes" "External"
+        fraudCloud = softwareSystem "Enterprise Fraud Cloud" "Consortium scoring (e.g., Feedzai / DataVisor)." "External"
+        identityCloud = softwareSystem "Identity Trust Network" "Behavioral biometrics (e.g., BioCatch)." "External"
+        charityOrg = softwareSystem "Verified Charity Fund" "Recipient of Sharia-mandated purification funds." "External"
+        
+        
+        malCore = softwareSystem "Mal Core" "The integrated core banking and AI stack." {
+            
+            # --- Entry & Discovery ---
+            apiGateway = container "API Gateway" "Secures entry and routes requests." "Kong / Tyk" "Entry"
+            accountRegistry = container "Account Registry" "Maps Customer IDs to Account IDs. Handles joint/corporate linkage." "PostgreSQL & Redis" "Metadata"
+
+            # --- Intelligence & Orchestration ---
+            productDNA = container "Product DNA Service" "Stores JSON schemas for Murabaha, Mudarabah, etc." "PostgreSQL JSONB" "Metadata"
+            orchestrator = container "Transaction Orchestrator" "Manages Saga patterns, Orchestrate risk/sharia checks and post to leger. Retry etc ." "Temporal.io" "Logic"
+                        
+            # --- The Guardrails ---
+            aiGuardrail = container "Risk / Sharia / AI Guardrail" "The Unified Risk & Policy Authority. Manages Sharia, Fraud, & AML." "Triton / Go" "AI"
+            
+            # --- The Read & Write Layers ---
+            balanceApi = container "Balance & Inquiry API" "High-speed read-optimized balance projection." "Go / Redis" "Read"
+            coreOrchestrator = container "Core Orchestrator" "Atomic Internal Money Authority." "Java" "Logic"
+            headlessLedger = container "Headless Ledger" "Immutable atomic double-entry vault." "TigerBeetle / Custom" "Core"
+            
+            # --- The Payments Core Logic ---
+            paymentsOrchestrator = container "Payments Orchestrator" "Conductor of Outbound & Inbound Sagas." "Temporal" "Logic"
+            railSelectionEngine = container "Rail Selection Engine" "External I/O & Webhook Listener." "Go" "Logic"
+            railConfigDB = container "Rail Configuration Store" "Routing rules & Adaptor endpoints." "Redis" "Metadata"
+
+            # --- Integrity & Core Authority ---
+            reconEngine = container "Reconciliation Engine" "3-Way automated matching." "Go" "Logic"
+            charityLedger = container "Charity Fund Manager" "Escrow for purification funds." "Go" "Domain"
+            
+            # --- Other Async Services ---
+            otherServices = container "Other Async Services" "Notifications, Analytics"
+            
+            eventBus = container "Event Backbone" "Streams ledger events to update read-models." "Redpanda" "Bus"
+        }
+        
+          # --- Relationships (Top to Bottom) ---
+        customer -> apiGateway "1. Requests Balance/Transfers or Payments"
+        ############################## ACCOUTS #################################
+        # Linkage Discovery
+        apiGateway -> accountRegistry "2. Resolves Customer to Accounts"
+        apiGateway -> balanceApi "3. Routes Balance Queries"
+        apiGateway -> orchestrator "4.1 Routes Transaction Requests"
+        
+        # Intelligence Loop
+        orchestrator -> productDNA "4.2 Fetches Product Configs & Rules"
+        orchestrator -> aiGuardrail "4.3 Request Global Clearance"
+        
+        # Final Commitment
+        orchestrator -> coreOrchestrator "4.4 Posts validated transaction"
+        coreOrchestrator -> headlessLedger "4.5 & 5.5 Commit Internal Multi-Leg Entry
+        
+        # Async Sync Loop
+        headlessLedger -> eventBus "Emits 'Committed' event"
+        eventBus -> balanceApi "Updates high-speed balance cache"
+        eventBus -> aiGuardrail "Updates feature store for next decision"
+        eventBus -> otherServices "Notification & Othe Async Services"
+        
+        ############################## PAYMENTS #################################
+        # Phase 1: Initiation
+        apiGateway -> paymentsOrchestrator "5.1 Payment Requests"
+        paymentsOrchestrator -> productDNA "5.2 Fetches Product Configs & Rules"
+        
+        # Phase 2: The Unified Guardrail (The "Big No/Yes")
+        paymentsOrchestrator -> aiGuardrail "5.3 Request Global Clearance"
+        
+        # Phase 3: Core & External Execution
+        paymentsOrchestrator -> coreOrchestrator "5.4 Request Fund Hold"
+        # coreOrchestrator -> headlessLedger "5.5 Commit Internal Multi-Leg Entry"
+        paymentsOrchestrator -> railSelectionEngine "5.6 Execute via Selected Rail"
+        railSelectionEngine -> railConfigDB "5.7 Identify basis on config which rail to be chosen"
+        railSelectionEngine -> externalPaymentNetworks "5.8 Send Money"
+
+        # Phase 4: Recon & Purification
+        eventBus -> reconEngine "5.9 Notify Settlement Receipt"
+        railSelectionEngine -> reconEngine "5.9 Notify Settlement Receipt"
+        reconEngine -> charityLedger "5.10 Flag Non-permissible for Purification"
+        charityLedger -> charityOrg "5.11 Disburse to Charity"
+        
+    }
+
+    views {
+        container malCore "Vertical_Core_v2" {
+            include *
+            autolayout lr
+        }
+
+        styles {
+        
+        element "Logic" {
+                background #DCB69A
+                color #000000
+            }
+        
+        element "Bus" {
+                background #818589
+                color #ffffff
+                shape Pipe
+            }
+            
+        element "External" {
+            background #666777
+            color #ffffff
+            }
+        
+        element "Core" {
+            background #008000
+            color #ffffff
+            shape Cylinder
+            }
+           
+        }
+
+        theme default
+    }
+}

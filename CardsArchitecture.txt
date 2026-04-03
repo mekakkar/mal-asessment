@@ -1,0 +1,134 @@
+workspace "Mal.ai Card Platform Architecture" "Full-Loop AI-First Headless Architecture" {
+
+    model {
+        customer = person "Customer" "User via Mobile/Web"
+        processor = softwareSystem "Issuer Processor" "PAN Vault & PCI Proxy" "External"
+        schemes = softwareSystem "Payment Networks" "Visa / Mastercard / Aani" "External"
+        crmSync = softwareSystem "CRM Sync" "Real-time updates to Salesforce/Zendesk." "External"
+        
+        
+        malPlatform = softwareSystem "Mal.ai Platform" {
+            
+            # --- 1. Entry & Security Layer ---
+            apiGateway = container "API Gateway" "Unified entry for customer traffic." "Kong" "Entry"
+            jitGateway = container "JIT Auth Gateway" "Listener for Processor JIT webhooks." "Go" "Entry"
+            schemeGateway = container "Rail Selection Engine" "External I/O & Webhook Listener." "Go" "Logic"
+
+            # --- 2. Metadata & Intelligence (The Brains) ---
+            productDNA = container "Product DNA" "Rules for Fees, Limits, and Sharia." "MongoDB" "Metadata"
+            accountRegistry = container "Account Registry" "The Map linking Customers to Accounts/Cards." "PostgreSQL" "Metadata"
+            aiGuardrail = container "AI/Sharia Guardrail" "Fraud & Compliance Scoring." "Triton" "AI"
+
+            # --- 3. The Cards Domain (Sovereign) ---
+            cardsOrchestrator = container "Cards Orchestrator" "Single entry for all Card actions." "Temporal" "Logic"
+            issuanceService = container "Issuance Service" "Worker for PANs & Physical Card Logistics." "Go" "Domain"
+            controlDB = container "Card Control DB" "User-defined Toggles (Geo/Channel)." "Redis" "ControlDB"
+
+            # --- 4. The Core Banking Domain ---
+            coreOrchestrator = container "Core Orchestrator" "Master Saga & Money Movement Manager." "Temporal" "Logic"
+            repaymentEngine = container "Repayment & Payments" "Handles Inbound Aani/Gateway transfers." "Go" "Logic"
+            balanceApi = container "Balance & Inquiry API" "Read-optimized projection for real-time checks." "Go / Redis" "Read"
+            
+            # --- 5. Data & Experience Layer ---
+            dataPlatform = container "Data Platform" "Historical store for enrichment & AI training." "Snowflake" "DataPlatform"
+            billingEngine = container "Billing & Statements" "Orchestrates monthly cycle generation." "Go" "Domain"
+            grievanceService = container "Dispute & Grievance" "Manages chargebacks & customer issues." "Go" "Domain"
+            
+            # --- 6. Persistence & Backbone ---
+            headlessLedger = container "Headless Ledger" "Immutable atomic truth." "TigerBeetle" "Core"
+            eventBus = container "Event Backbone" "Streaming backbone for the bank." "Redpanda" "Bus"
+        }
+
+        # --- THE CONNECTIVITY ---
+
+        # 1. Discovery & Linkage
+        cardsOrchestrator -> productDNA "Lookup: Validates card-specific rules"
+        coreOrchestrator -> productDNA "Lookup: Validates accounting/Sharia paths"
+        accountRegistry -> productDNA "Ensures Instance matches Blueprint"
+        
+        # 2. Card Issuance & Lifecycle (Orchestrator-First)
+        customer -> apiGateway "Card Request "
+        apiGateway -> balanceApi "1. Route Read Requests"
+        apiGateway -> cardsOrchestrator "2.1 Route Issuance/Update "
+        cardsOrchestrator -> productDNA "2.2 Lookup: Validates product-specific rules"
+        cardsOrchestrator -> issuanceService "2.3 Trigger Issuance Saga"
+        issuanceService -> processor "2.4 Request PAN / Physical Ship"
+        issuanceService -> accountRegistry "2.5 Write Linkage"
+        accountRegistry -> eventBus "2.6 Emit Issuance Event (Customer Onboarded)"
+
+        # 3. Authorization (JIT)
+        schemes -> processor "3.1 Swipe"
+        processor -> jitGateway "3.2 JIT Request"
+        jitGateway -> cardsOrchestrator "3.3 Decide"
+        cardsOrchestrator -> accountRegistry "3.4 Resolve Card to Account"
+        cardsOrchestrator -> controlDB "3.5 Check User Toggles"
+        cardsOrchestrator -> aiGuardrail "3.6 Request Global Clearance"
+        cardsOrchestrator -> coreOrchestrator "3.7 Request Fund Hold"
+
+        # 4. Payments & Repayments (Inbound)
+        schemes -> schemeGateway "4.1 Inbound Aani / Transfer"
+        schemeGateway -> repaymentEngine "4.2 Process Payment"
+        repaymentEngine -> coreOrchestrator "4.3 Credit Account"
+        coreOrchestrator -> headlessLedger "4.4 Commit to Ledger"
+
+        # 5. Data, Enrichment & Observability
+        headlessLedger -> eventBus "Emit Committed Event"
+        eventBus -> dataPlatform "Stream for Enrichment (Merchant logos/Geo)"
+        eventBus -> balanceApi "Update Cache"
+        eventBus -> crmSync "Update Customer 360"
+        
+        # 6. Back-Office & Maintenance
+        billingEngine -> dataPlatform "Fetch enriched history & categories"
+        billingEngine -> headlessLedger "Audit: Balance Verification"
+        
+        grievanceService -> dataPlatform "Investigate Transaction History"
+        grievanceService -> processor "Trigger Chargeback"
+    }
+
+    views {
+        container malPlatform "Full_Enterprise_View" {
+            include *
+            autolayout lr
+        }
+
+        styles {
+        
+        element "Logic" {
+                background #DCB69A
+                color #000000
+            }
+        
+        element "Bus" {
+                background #818589
+                color #ffffff
+                shape Pipe
+            }
+            
+        element "External" {
+            background #666777
+            color #ffffff
+            }
+        
+        element "Core" {
+            background #008000
+            color #ffffff
+            shape Cylinder
+            }
+            
+        element "DataPlatform" {
+            background #008000
+            color #ffffff
+            shape Circle
+            }
+            
+        element "ControlDB" {
+            background #008000
+            color #ffffff
+            shape Cylinder
+            }
+            
+        }
+
+        theme default
+    }
+}
