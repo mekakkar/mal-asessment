@@ -33,22 +33,28 @@ sequenceDiagram
         activate RepayEngine
         Note right of RepayEngine: Download from Processor<br/>Parse XML/CSV<br/>Match to Authorizations
         
-        loop For Each Transaction in Batch
-            RepayEngine->>CoreOrch: POST /core/settle-authorization<br/>{auth_id, amount, fees}
-            activate CoreOrch
-            
-            CoreOrch->>Ledger: Convert PENDING → FINAL Settlement
-            activate Ledger
-            Note over Ledger: Multi-Entry Transaction:<br/>1. Finalize Customer DR (FINAL)<br/>2. Clear Processor Liability<br/>3. Record Interchange Fee (DR)<br/>4. Record Scheme Fee (DR)<br/>5. Net Payable to Visa (CR)
-            
-            Note over Ledger: Example for $50 Transaction:<br/>DR Customer Checking -$50.00 (FINAL)<br/>DR Processor Liability -$50.00<br/>DR Interchange Expense -$1.25<br/>DR Scheme Fees -$0.10<br/>CR Visa Payable +$51.35
-            
-            Ledger-->>CoreOrch: {settlement_id, status: POSTED}
-            deactivate Ledger
-            
-            CoreOrch-->>RepayEngine: Settlement Complete
-            deactivate CoreOrch
-        end
+        loop For Each Batch of 10 Transactions
+    RepayEngine->>CoreOrch: POST /core/settle-authorization<br/>{auth_ids[], amounts[], batch_id}
+    activate CoreOrch
+    
+    CoreOrch->>Ledger: Submit Linked Transfer Chain (30 transfers per batch)
+    activate Ledger
+    Note over Ledger: Transfer 1 — POST_PENDING (Close Auth Hold):<br/>DR Customer Cardholder Receivable $50.00 FINAL<br/>CR Processor Liability $50.00
+
+    Note over Ledger: Transfer 2 — Settlement Split:<br/>DR Processor Liability $50.00<br/>CR Settlement Payable (to Visa) $49.25<br/>CR Interchange Income $0.75
+
+    Note over Ledger: Transfer 3 — Remittance to Visa:<br/>DR Settlement Payable $49.25<br/>CR Nostro Account $49.25
+
+    Note over Ledger: Each transaction's 3 transfers are a linked chain.<br/>Failure in one chain rolls back that chain only.<br/>Other 9 transactions in batch are unaffected.
+    
+    Ledger-->>CoreOrch: results[]{transfer_id, status: POSTED | FAILED}
+    deactivate Ledger
+    
+    CoreOrch->>CoreOrch: Map results back to transaction IDs:<br/>POSTED → mark SETTLED in Postgres<br/>FAILED → isolate for retry
+    
+    CoreOrch-->>RepayEngine: {settled: 10, failed: 0}
+    deactivate CoreOrch
+end
         
         RepayEngine-->>SchemeGW: Batch Processing Complete<br/>{processed: 1247, failed: 0}
         deactivate RepayEngine
